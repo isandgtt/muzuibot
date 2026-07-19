@@ -4,16 +4,19 @@ import { UserManager } from './UserManager.js';
 import { STATE } from '../utils/constants.js';
 import { Logger } from '../utils/logger.js';
 
-let isProcessing = false;
-
 export class MatchmakingService {
     /**
      * Process the queue and match users.
+     * 
+     * NO global lock — the lock was causing the "search 2x" bug because:
+     * When User A calls processQueue (finds only itself), User B joins and also
+     * calls processQueue but gets blocked by isProcessing = true.
+     * 
+     * Instead, we rely on atomic dequeue (MongoDB deleteOne) to prevent
+     * double-matching. If two processQueue calls run concurrently, the first
+     * one to dequeue a user wins; the second sees the user is gone.
      */
     static async processQueue(bot) {
-        if (isProcessing) return;
-        isProcessing = true;
-
         try {
             const queueArr = await QueueManager.getQueueArray();
             if (queueArr.length < 2) return;
@@ -24,23 +27,23 @@ export class MatchmakingService {
 
             for (let i = 0; i < queueArr.length; i++) {
                 const u1 = queueArr[i];
-                if (matchedIds.has(u1.userId)) continue;
+                const u1Id = Number(u1.userId);
+                if (matchedIds.has(u1Id)) continue;
 
                 // Verify user is still valid and in queue
-                const user1 = await UserManager.getUser(u1.userId);
-                const stillInQueue1 = await QueueManager.isInQueue(u1.userId);
-                if (!user1 || user1.state !== STATE.SEARCHING || !stillInQueue1) continue;
+                const user1 = await UserManager.getUser(u1Id);
+                if (!user1 || user1.state !== STATE.SEARCHING) continue;
 
                 let bestMatch = null;
                 let highestScore = -1;
 
                 for (let j = i + 1; j < queueArr.length; j++) {
                     const u2 = queueArr[j];
-                    if (matchedIds.has(u2.userId)) continue;
+                    const u2Id = Number(u2.userId);
+                    if (matchedIds.has(u2Id)) continue;
 
-                    const user2 = await UserManager.getUser(u2.userId);
-                    const stillInQueue2 = await QueueManager.isInQueue(u2.userId);
-                    if (!user2 || user2.state !== STATE.SEARCHING || !stillInQueue2) continue;
+                    const user2 = await UserManager.getUser(u2Id);
+                    if (!user2 || user2.state !== STATE.SEARCHING) continue;
 
                     const score = this.calculateScore(u1, u2);
                     if (score > highestScore) {
@@ -50,19 +53,38 @@ export class MatchmakingService {
                 }
 
                 if (bestMatch && highestScore >= 0) {
-                    matchedIds.add(u1.userId);
-                    matchedIds.add(bestMatch.userId);
+                    const bestMatchId = Number(bestMatch.userId);
 
-                    await QueueManager.dequeue(u1.userId);
-                    await QueueManager.dequeue(bestMatch.userId);
+                    // Atomic dequeue — if another concurrent processQueue already
+                    // took this user, dequeue returns false and we skip.
+                    const removedA = await QueueManager.dequeue(u1Id);
+                    const removedB = await QueueManager.dequeue(bestMatchId);
 
-                    Logger.match(`Match found: ${u1.userId} <-> ${bestMatch.userId} (score: ${highestScore})`);
+                    if (!removedA || !removedB) {
+                        // One or both were already dequeued by a concurrent process.
+                        // Re-enqueue the one that was successfully dequeued (if any)
+                        // so they don't get lost.
+                        if (removedA && !removedB) {
+                            Logger.match(`Conflict: re-enqueuing ${u1Id} (partner ${bestMatchId} already taken)`);
+                            await QueueManager.enqueue(u1Id);
+                        }
+                        if (removedB && !removedA) {
+                            Logger.match(`Conflict: re-enqueuing ${bestMatchId} (partner ${u1Id} already taken)`);
+                            await QueueManager.enqueue(bestMatchId);
+                        }
+                        continue;
+                    }
 
-                    await SessionManager.createSession(bot, u1.userId, bestMatch.userId);
+                    matchedIds.add(u1Id);
+                    matchedIds.add(bestMatchId);
+
+                    Logger.match(`Match found: ${u1Id} <-> ${bestMatchId} (score: ${highestScore})`);
+
+                    await SessionManager.createSession(bot, u1Id, bestMatchId);
                 }
             }
-        } finally {
-            isProcessing = false;
+        } catch (err) {
+            Logger.error('processQueue error:', err.message);
         }
     }
 

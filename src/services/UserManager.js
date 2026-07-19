@@ -9,11 +9,12 @@ export class UserManager {
     }
 
     static async createUser(id) {
-        let user = await this.getUser(id);
+        const numId = Number(id);
+        let user = await this.getUser(numId);
         if (!user) {
             user = {
                 id: uuidv4(),
-                telegram_id: id,
+                telegram_id: numId,
                 gender: null,
                 genderPreference: null,
                 city: null,
@@ -35,30 +36,33 @@ export class UserManager {
                 },
                 lastNext: 0
             };
-            await StorageService.setUser(id, user);
-            Logger.info(`New user created: ${id}`);
+            await StorageService.setUser(numId, user);
+            Logger.info(`New user created: ${numId}`);
         }
         return user;
     }
 
     static async updateUserState(id, newState) {
-        const user = await this.getUser(id);
+        const numId = Number(id);
+        const user = await this.getUser(numId);
         if (user) {
             user.state = newState;
-            await StorageService.setUser(id, user);
+            await StorageService.setUser(numId, user);
         }
     }
 
     static async deleteUser(id) {
-        await StorageService.deleteUser(id);
-        Logger.info(`User deleted: ${id}`);
+        const numId = Number(id);
+        await StorageService.deleteUser(numId);
+        Logger.info(`User deleted: ${numId}`);
     }
 
     static async updateLastSeen(id) {
-        const user = await this.getUser(id);
+        const numId = Number(id);
+        const user = await this.getUser(numId);
         if (user) {
             user.lastSeen = Date.now();
-            await StorageService.setUser(id, user);
+            await StorageService.setUser(numId, user);
         }
     }
 
@@ -67,8 +71,8 @@ export class UserManager {
     }
 
     static async saveUser(user) {
-        if (user && user.telegram_id) {
-            await StorageService.setUser(user.telegram_id, user);
+        if (user && user.telegram_id != null) {
+            await StorageService.setUser(Number(user.telegram_id), user);
         }
     }
 }

@@ -1,6 +1,5 @@
 import { UserManager } from '../services/UserManager.js';
 import { QueueManager } from '../services/QueueManager.js';
-import { SessionManager } from '../services/SessionManager.js';
 import { MatchmakingService } from '../services/MatchmakingService.js';
 import { STATE } from '../utils/constants.js';
 import locale from '../locales/id.js';
@@ -33,8 +32,19 @@ export const joinQueue = async (bot, chatId, tempPref = null) => {
     if (user.state === STATE.MATCHED) {
         return bot.sendMessage(chatId, "Kamu sedang dalam percakapan. Gunakan ⏭ Next atau 🛑 Stop terlebih dahulu.");
     }
+
+    // FIX BUG 4: Stale SEARCHING state recovery.
+    // If user state is SEARCHING but they are NOT actually in the queue
+    // (e.g. after bot restart, crash, or Vercel cold start), reset them
+    // so they can search again instead of being stuck forever.
     if (user.state === STATE.SEARCHING) {
-        return bot.sendMessage(chatId, locale.alreadyInQueue);
+        const actuallyInQueue = await QueueManager.isInQueue(chatId);
+        if (actuallyInQueue) {
+            return bot.sendMessage(chatId, locale.alreadyInQueue);
+        }
+        // State is SEARCHING but not in queue — stale state, reset it
+        user.state = STATE.IDLE;
+        await UserManager.saveUser(user);
     }
 
     const success = await QueueManager.enqueue(chatId, tempPref);
@@ -42,10 +52,17 @@ export const joinQueue = async (bot, chatId, tempPref = null) => {
         return bot.sendMessage(chatId, locale.alreadyInQueue);
     }
 
-    await startSearchMessage(bot, chatId);
-
-    // Trigger matchmaking immediately for Vercel/serverless
+    // FIX BUG 3: Call processQueue IMMEDIATELY after enqueue, BEFORE the
+    // slow startSearchMessage I/O. This ensures that if both users are
+    // already in the queue, they get matched instantly without waiting
+    // for the Telegram API sendMessage round-trip.
     await MatchmakingService.processQueue(bot);
+
+    // Only show search animation if user wasn't matched yet
+    const updatedUser = await UserManager.getUser(chatId);
+    if (updatedUser && updatedUser.state === STATE.SEARCHING) {
+        await startSearchMessage(bot, chatId);
+    }
 };
 
 const startSearchMessage = async (bot, chatId) => {

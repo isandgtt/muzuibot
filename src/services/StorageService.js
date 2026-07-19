@@ -15,12 +15,12 @@ async function getDb() {
         await client.connect();
         db = client.db('muzuibot');
         
-        // Ensure indexes
+        // Ensure indexes — all IDs stored as Numbers
         await db.collection('users').createIndex({ telegram_id: 1 }, { unique: true });
         await db.collection('queue').createIndex({ userId: 1 }, { unique: true });
         await db.collection('sessions').createIndex({ id: 1 }, { unique: true });
         
-        Logger.info('Connected to MongoDB successfully and verified indexes.');
+        Logger.info('Connected to MongoDB successfully.');
         return db;
     } catch (e) {
         Logger.error('MongoDB connection error:', e.message);
@@ -40,39 +40,39 @@ const memStats = {
 export class StorageService {
     // --- USER METHODS ---
     static async getUser(id) {
-        const key = String(id);
+        const numId = Number(id);
         const mongoDb = await getDb();
         if (mongoDb) {
-            const user = await mongoDb.collection('users').findOne({ telegram_id: key });
-            return user;
+            return await mongoDb.collection('users').findOne({ telegram_id: numId });
         } else {
-            return memUsers.get(key) || null;
+            return memUsers.get(numId) || null;
         }
     }
 
     static async setUser(id, user) {
-        const key = String(id);
+        const numId = Number(id);
         const mongoDb = await getDb();
         if (mongoDb) {
             const doc = { ...user };
             delete doc._id;
+            doc.telegram_id = numId;
             await mongoDb.collection('users').updateOne(
-                { telegram_id: key },
+                { telegram_id: numId },
                 { $set: doc },
                 { upsert: true }
             );
         } else {
-            memUsers.set(key, user);
+            memUsers.set(numId, user);
         }
     }
 
     static async deleteUser(id) {
-        const key = String(id);
+        const numId = Number(id);
         const mongoDb = await getDb();
         if (mongoDb) {
-            await mongoDb.collection('users').deleteOne({ telegram_id: key });
+            await mongoDb.collection('users').deleteOne({ telegram_id: numId });
         } else {
-            memUsers.delete(key);
+            memUsers.delete(numId);
         }
     }
 
@@ -87,38 +87,40 @@ export class StorageService {
 
     // --- QUEUE METHODS ---
     static async enqueue(userId, queueItem) {
-        const key = String(userId);
+        const numId = Number(userId);
         const mongoDb = await getDb();
         if (mongoDb) {
+            const doc = { ...queueItem };
+            doc.userId = numId;
             await mongoDb.collection('queue').updateOne(
-                { userId: key },
-                { $set: queueItem },
+                { userId: numId },
+                { $set: doc },
                 { upsert: true }
             );
         } else {
-            memQueue.set(key, queueItem);
+            memQueue.set(numId, queueItem);
         }
     }
 
     static async dequeue(userId) {
-        const key = String(userId);
+        const numId = Number(userId);
         const mongoDb = await getDb();
         if (mongoDb) {
-            const res = await mongoDb.collection('queue').deleteOne({ userId: key });
+            const res = await mongoDb.collection('queue').deleteOne({ userId: numId });
             return res.deletedCount > 0;
         } else {
-            return memQueue.delete(key);
+            return memQueue.delete(numId);
         }
     }
 
     static async isInQueue(userId) {
-        const key = String(userId);
+        const numId = Number(userId);
         const mongoDb = await getDb();
         if (mongoDb) {
-            const count = await mongoDb.collection('queue').countDocuments({ userId: key });
+            const count = await mongoDb.collection('queue').countDocuments({ userId: numId });
             return count > 0;
         } else {
-            return memQueue.has(key);
+            return memQueue.has(numId);
         }
     }
 
