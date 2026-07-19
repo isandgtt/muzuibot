@@ -1,36 +1,66 @@
-import { users } from '../data/memory.js';
-import { USER_STATUS } from '../utils/constants.js';
-import { addToQueue, removeFromQueue } from '../services/queue.js';
-import { findMatch } from '../services/matchmaking.js';
-import { endSession } from '../services/session.js';
+import { UserManager } from '../services/UserManager.js';
+import { QueueManager } from '../services/QueueManager.js';
+import { SessionManager } from '../services/SessionManager.js';
+import { STATE } from '../utils/constants.js';
+import locale from '../locales/id.js';
+import config from '../config/config.js';
+import { activeAnimations } from '../data/memory.js';
+import { searchGenderKeyboard, idleKeyboard } from '../utils/keyboards.js';
 
-export const execute = async (bot, msg) => {
+export const execute = async (bot, msg, byGender = false) => {
     const chatId = msg.chat.id;
-    const user = users.get(chatId);
+    const user = UserManager.getUser(chatId);
     
     if (!user || !user.gender || !user.genderPreference || !user.city) {
-        return bot.sendMessage(chatId, "Silakan lengkapi profil terlebih dahulu dengan /start");
+        return bot.sendMessage(chatId, "Silakan lengkapi profil terlebih dahulu dengan /start", { reply_markup: idleKeyboard });
+    }
+
+    if (byGender) {
+        return bot.sendMessage(chatId, "Pilih gender yang ingin kamu cari (hanya untuk sesi ini):", {
+            reply_markup: searchGenderKeyboard
+        });
     }
     
-    if (user.status === USER_STATUS.CHATTING) {
-        const partnerId = endSession(chatId);
-        if (partnerId) {
-            bot.sendMessage(partnerId, "Partner meninggalkan percakapan.\n\nGunakan /search untuk mencari partner baru.");
+    await joinQueue(bot, chatId);
+};
+
+export const joinQueue = async (bot, chatId, tempPref = null) => {
+    const user = UserManager.getUser(chatId);
+    if (!user) return;
+
+    if (user.state === STATE.MATCHED) {
+        const now = Date.now();
+        if (now - user.lastNext < config.cooldownMs) {
+            return bot.sendMessage(chatId, locale.cooldownWarning);
         }
+        user.lastNext = now;
+        await SessionManager.endSession(bot, chatId, true);
     }
     
-    if (user.status === USER_STATUS.SEARCHING) {
-        return bot.sendMessage(chatId, "Kamu sudah berada di dalam antrean pencarian. Mohon tunggu.");
+    if (user.state === STATE.SEARCHING) {
+        return bot.sendMessage(chatId, locale.alreadyInQueue);
     }
     
-    addToQueue(chatId);
-    await bot.sendMessage(chatId, "🔍 Mencari partner...");
-    
-    const partnerId = findMatch(chatId);
-    
-    if (partnerId) {
-        const matchMsg = `🎉 Partner ditemukan!\n\nMulai ngobrol sekarang.\n\nGunakan /next untuk ganti partner.\nGunakan /stop untuk berhenti.`;
-        bot.sendMessage(chatId, matchMsg);
-        bot.sendMessage(partnerId, matchMsg);
+    const success = QueueManager.enqueue(chatId, tempPref);
+    if (success) {
+        startSearchAnimation(bot, chatId);
     }
+};
+
+const startSearchAnimation = async (bot, chatId) => {
+    try {
+        const msg = await bot.sendMessage(chatId, `${locale.searching}\n\nPeople online: ${UserManager.getUsersCount()}\nSearching: ${QueueManager.getQueueSize()}\nEstimated wait: < 1 minute`);
+        let dots = 1;
+        const interval = setInterval(() => {
+            const dotStr = ".".repeat(dots);
+            const text = `🔍 Searching partner${dotStr}\n\nPeople online: ${UserManager.getUsersCount()}\nSearching: ${QueueManager.getQueueSize()}\nEstimated wait: < 1 minute`;
+            bot.editMessageText(text, {
+                chat_id: chatId,
+                message_id: msg.message_id
+            }).catch(()=>{}); 
+            dots = (dots % 3) + 1;
+        }, config.searchAnimationIntervalMs);
+        
+        activeAnimations.set(chatId, { interval, messageId: msg.message_id });
+    } catch (e) {}
 };

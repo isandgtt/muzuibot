@@ -1,10 +1,19 @@
-export const USER_STATUS = {
-    IDLE: 'idle',
-    SEARCHING: 'searching',
-    CHATTING: 'chatting'
+export const STATE = {
+    NEW: 'NEW',
+    PROFILE_SETUP: 'PROFILE_SETUP',
+    IDLE: 'IDLE',
+    SEARCHING: 'SEARCHING',
+    MATCHED: 'MATCHED',
+    DISCONNECTED: 'DISCONNECTED',
+    BANNED: 'BANNED'
 };
 
-export const CONVERSATION_STATE = {
-    NONE: 'none',
-    AWAITING_CITY: 'awaiting_city'
+export const COMMANDS = {
+    START: '/start',
+    SEARCH: '/search',
+    NEXT: '/next',
+    STOP: '/stop',
+    PROFILE: '/profile',
+    SETTINGS: '/settings',
+    HELP: '/help'
 };

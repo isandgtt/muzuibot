@@ -1,6 +1,5 @@
 import { UserManager } from '../services/UserManager.js';
-import { execute as searchCmd } from './search.js';
-import locale from '../locales/id.js';
+import { settingsKeyboard } from '../utils/keyboards.js';
 
 export const execute = async (bot, msg) => {
     const chatId = msg.chat.id;
@@ -8,5 +7,8 @@ export const execute = async (bot, msg) => {
     
     if (!user) return bot.sendMessage(chatId, "Gunakan /start terlebih dahulu.");
     
-    await searchCmd(bot, msg);
+    bot.sendMessage(chatId, "⚙️ **Settings**\nPilih menu yang ingin kamu ubah:", {
+        parse_mode: 'Markdown',
+        reply_markup: settingsKeyboard
+    });
 };

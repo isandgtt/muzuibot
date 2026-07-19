@@ -1,24 +1,24 @@
-import { users } from '../data/memory.js';
-import { endSession } from '../services/session.js';
-import { removeFromQueue } from '../services/queue.js';
-import { USER_STATUS } from '../utils/constants.js';
+import { UserManager } from '../services/UserManager.js';
+import { SessionManager } from '../services/SessionManager.js';
+import { QueueManager } from '../services/QueueManager.js';
+import { STATE } from '../utils/constants.js';
+import { idleKeyboard } from '../utils/keyboards.js';
+import locale from '../locales/id.js';
 
 export const execute = async (bot, msg) => {
     const chatId = msg.chat.id;
-    const user = users.get(chatId);
+    const user = UserManager.getUser(chatId);
     
     if (!user) return bot.sendMessage(chatId, "Gunakan /start terlebih dahulu.");
     
-    if (user.status === USER_STATUS.CHATTING) {
-        const partnerId = endSession(chatId);
-        if (partnerId) {
-            bot.sendMessage(partnerId, "Partner meninggalkan percakapan.\n\nGunakan /search untuk mencari partner baru.");
-        }
-        bot.sendMessage(chatId, "Kamu telah menghentikan percakapan.");
-    } else if (user.status === USER_STATUS.SEARCHING) {
-        removeFromQueue(chatId);
-        bot.sendMessage(chatId, "Berhenti mencari partner.");
+    if (user.state === STATE.MATCHED) {
+        await SessionManager.endSession(bot, chatId, false);
+        bot.sendMessage(chatId, locale.youLeft, { reply_markup: idleKeyboard });
+    } else if (user.state === STATE.SEARCHING) {
+        QueueManager.dequeue(chatId);
+        SessionManager.clearAnimation(chatId);
+        bot.sendMessage(chatId, locale.stopSearch, { reply_markup: idleKeyboard });
     } else {
-        bot.sendMessage(chatId, "Kamu tidak sedang mencari atau chatting dengan siapa pun.");
+        bot.sendMessage(chatId, locale.notSearching, { reply_markup: idleKeyboard });
     }
 };
