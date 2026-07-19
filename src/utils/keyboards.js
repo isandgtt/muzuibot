@@ -43,3 +43,13 @@ export const deleteConfirmKeyboard = {
         [{ text: 'Yes', callback_data: 'del_yes' }, { text: 'No', callback_data: 'del_no' }]
     ]
 };
+
+export const settingsKeyboard = {
+    inline_keyboard: [
+        [{ text: 'Change Gender', callback_data: 'set_gender' }],
+        [{ text: 'Change Preference', callback_data: 'set_pref' }],
+        [{ text: 'Change City', callback_data: 'set_city' }],
+        [{ text: 'Delete Profile', callback_data: 'set_delete' }],
+        [{ text: 'Back', callback_data: 'set_back' }]
+    ]
+};
