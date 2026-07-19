@@ -42,12 +42,14 @@ bot.on('polling_error', (error) => {
     Logger.error("Polling error:", error.code);
 });
 
-setInterval(() => {
-    MatchmakingService.processQueue(bot).catch(err => Logger.error("Matchmaking error", err));
-}, config.queueUpdateIntervalMs);
+if (!isWebhook) {
+    setInterval(() => {
+        MatchmakingService.processQueue(bot).catch(err => Logger.error("Matchmaking error", err));
+    }, config.queueUpdateIntervalMs);
 
-setInterval(() => {
-    SessionManager.checkTimeouts(bot).catch(err => Logger.error("Timeout check error", err));
-}, 60000);
+    setInterval(() => {
+        SessionManager.checkTimeouts(bot).catch(err => Logger.error("Timeout check error", err));
+    }, 60000);
+}
 
 export default bot;

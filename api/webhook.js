@@ -1,6 +1,7 @@
 import express from 'express';
 import bot from '../src/bot.js';
 import dotenv from 'dotenv';
+import { SessionManager } from '../src/services/SessionManager.js';
 
 dotenv.config();
 
@@ -10,7 +11,6 @@ app.use(express.json());
 const url = process.env.WEBHOOK_URL;
 const token = process.env.BOT_TOKEN;
 
-// Set webhook if WEBHOOK_URL is provided
 if (url) {
     bot.setWebHook(`${url}/api/webhook`)
         .then(() => console.log(`Webhook set to: ${url}/api/webhook`))
@@ -19,6 +19,7 @@ if (url) {
 
 app.post('/api/webhook', (req, res) => {
     bot.processUpdate(req.body);
+    SessionManager.checkTimeouts(bot).catch(()=>{});
     res.sendStatus(200);
 });
 
@@ -26,7 +27,6 @@ app.get('/', (req, res) => {
     res.send('MuzuiBot is running!');
 });
 
-// For local testing of express server (if not deployed to Vercel and WEBHOOK_URL is provided)
 if (process.env.NODE_ENV !== 'production' && url) {
     const port = process.env.PORT || 3000;
     app.listen(port, () => {

@@ -1,5 +1,5 @@
 export default {
-    welcome: "👋 Selamat datang di MuzuiBot!\n\nMuzuiBot adalah Anonymous Chat Telegram.\n\nSilakan lengkapi profil terlebih dahulu.\nPilih Gender kamu:",
+    welcome: "👋 Selamat datang di MuzuiBot!\n\nMuzuiBot adalah Anonymous Chat Telegram.\nKamu bisa langsung mencari partner, atau atur preferensi kamu di menu Settings.",
     profileCreated: "✅ Profil berhasil dibuat.",
     chooseGenderPref: "Pilih Gender Preference (Siapa yang ingin kamu ajak chat):",
     askCity: "Kirimkan nama Kota kamu (Contoh: Jakarta, Bandung, dll):",

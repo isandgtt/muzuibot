@@ -46,8 +46,13 @@ export class MatchmakingService {
     static calculateScore(u1, u2) {
         let score = 0;
         
-        const prefMatch1 = u1.genderPreference === 'random' || u1.genderPreference === u2.gender;
-        const prefMatch2 = u2.genderPreference === 'random' || u2.genderPreference === u1.gender;
+        const pref1 = u1.genderPreference || 'random';
+        const gen1 = u1.gender || 'unknown';
+        const pref2 = u2.genderPreference || 'random';
+        const gen2 = u2.gender || 'unknown';
+
+        const prefMatch1 = pref1 === 'random' || pref1 === gen2;
+        const prefMatch2 = pref2 === 'random' || pref2 === gen1;
         
         if (!prefMatch1 || !prefMatch2) {
             return -1; 
@@ -55,7 +60,9 @@ export class MatchmakingService {
 
         score += 50;
 
-        if (u1.city.toLowerCase() === u2.city.toLowerCase()) {
+        const city1 = u1.city || 'unknown';
+        const city2 = u2.city || 'unknown';
+        if (city1 !== 'unknown' && city1.toLowerCase() === city2.toLowerCase()) {
             score += 30;
         }
 
