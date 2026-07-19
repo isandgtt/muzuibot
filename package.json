@@ -1,0 +1,20 @@
+{
+  "name": "muzuibot",
+  "version": "1.0.0",
+  "description": "Anonymous Chat Telegram Bot",
+  "main": "api/webhook.js",
+  "type": "module",
+  "engines": {
+    "node": ">=18.x"
+  },
+  "scripts": {
+    "dev": "node src/bot.js",
+    "start": "node api/webhook.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "node-telegram-bot-api": "^0.65.1",
+    "uuid": "^9.0.1"
+  }
+}
