@@ -9,7 +9,7 @@ export const handleCallbackQuery = async (bot, query) => {
     const data = query.data;
     const messageId = query.message.message_id;
     
-    const user = UserManager.getUser(chatId);
+    const user = await UserManager.getUser(chatId);
     if (!user) {
         return bot.answerCallbackQuery(query.id, { text: "Session expired. Gunakan /start" });
     }
@@ -18,6 +18,7 @@ export const handleCallbackQuery = async (bot, query) => {
         if (data.startsWith('gender_')) {
             const gender = data.replace('gender_', ''); 
             user.gender = gender;
+            await UserManager.saveUser(user);
             await bot.editMessageText(locale.chooseGenderPref, {
                 chat_id: chatId,
                 message_id: messageId,
@@ -27,6 +28,7 @@ export const handleCallbackQuery = async (bot, query) => {
         } else if (data.startsWith('pref_')) {
             const pref = data.replace('pref_', ''); 
             user.genderPreference = pref;
+            await UserManager.saveUser(user);
             
             if (user.state === STATE.PROFILE_SETUP) {
                 await bot.editMessageText(locale.askCity, {
@@ -43,7 +45,7 @@ export const handleCallbackQuery = async (bot, query) => {
             await joinQueue(bot, chatId, tempPref);
             await bot.answerCallbackQuery(query.id);
         } else if (data === 'del_yes') {
-            UserManager.deleteUser(chatId);
+            await UserManager.deleteUser(chatId);
             await bot.editMessageText("Profil kamu telah dihapus. Ketik /start untuk membuat ulang.", { chat_id: chatId, message_id: messageId });
             await bot.answerCallbackQuery(query.id);
         } else if (data === 'del_no') {
@@ -58,6 +60,7 @@ export const handleCallbackQuery = async (bot, query) => {
         } else if (data === 'set_city') {
             user.state = STATE.PROFILE_SETUP;
             user.city = null;
+            await UserManager.saveUser(user);
             await bot.editMessageText(locale.askCity, { chat_id: chatId, message_id: messageId });
             await bot.answerCallbackQuery(query.id);
         } else if (data === 'set_delete') {

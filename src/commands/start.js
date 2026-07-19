@@ -5,12 +5,14 @@ import locale from '../locales/id.js';
 
 export const execute = async (bot, msg) => {
     const chatId = msg.chat.id;
-    const user = UserManager.createUser(chatId);
+    const user = await UserManager.createUser(chatId);
 
     if (user.state === STATE.MATCHED || user.state === STATE.SEARCHING) {
         user.state = STATE.IDLE;
+        await UserManager.saveUser(user);
     } else if (user.state === STATE.NEW || user.state === STATE.PROFILE_SETUP) {
         user.state = STATE.IDLE;
+        await UserManager.saveUser(user);
     }
 
     try {

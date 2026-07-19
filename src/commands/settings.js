@@ -3,7 +3,7 @@ import { settingsKeyboard } from '../utils/keyboards.js';
 
 export const execute = async (bot, msg) => {
     const chatId = msg.chat.id;
-    const user = UserManager.getUser(chatId);
+    const user = await UserManager.getUser(chatId);
     
     if (!user) return bot.sendMessage(chatId, "Gunakan /start terlebih dahulu.");
     

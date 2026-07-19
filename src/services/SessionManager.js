@@ -1,4 +1,5 @@
-import { sessions, activeAnimations } from '../data/memory.js';
+import { StorageService } from './StorageService.js';
+import { activeAnimations } from '../data/memory.js';
 import { v4 as uuidv4 } from 'uuid';
 import { STATE, SESSION_STATE, END_REASON } from '../utils/constants.js';
 import { UserManager } from './UserManager.js';
@@ -12,11 +13,10 @@ export class SessionManager {
     /**
      * Creates a new session between two users.
      * Atomic flow: lock → assign → notify.
-     * Returns sessionId or null on failure.
      */
     static async createSession(bot, partnerA_id, partnerB_id) {
-        const userA = UserManager.getUser(partnerA_id);
-        const userB = UserManager.getUser(partnerB_id);
+        const userA = await UserManager.getUser(partnerA_id);
+        const userB = await UserManager.getUser(partnerB_id);
 
         if (!userA || !userB) {
             Logger.error(`createSession aborted: missing user data (A:${!!userA} B:${!!userB})`);
@@ -36,7 +36,7 @@ export class SessionManager {
             messagesA: 0,
             messagesB: 0
         };
-        sessions.set(sessionId, session);
+        await StorageService.setSession(sessionId, session);
 
         // --- STEP 2: Lock both users (MATCHING) and assign partner/session ---
         userA.state = STATE.MATCHING;
@@ -51,12 +51,19 @@ export class SessionManager {
         userB.stats.totalMatches++;
         userB.stats.totalChats++;
 
+        await UserManager.saveUser(userA);
+        await UserManager.saveUser(userB);
+
         // --- STEP 3: Activate session and unlock users ---
         session.state = SESSION_STATE.ACTIVE;
+        await StorageService.setSession(sessionId, session);
+
         userA.state = STATE.MATCHED;
         userB.state = STATE.MATCHED;
+        await UserManager.saveUser(userA);
+        await UserManager.saveUser(userB);
 
-        StatsManager.incrementMatches();
+        await StatsManager.incrementMatches();
         Logger.match(`Session Created | sessionId=${sessionId} | userA=${partnerA_id} | userB=${partnerB_id}`);
 
         this.clearAnimation(partnerA_id);
@@ -78,15 +85,12 @@ export class SessionManager {
     }
 
     /**
-     * Ends a session. Only called by explicit user action (Next/Stop) or Timeout.
-     * Validates session state and ID before proceeding.
-     * @param {string} reason - One of END_REASON values
+     * Ends a session.
      */
     static async endSession(bot, userId, reason = END_REASON.STOP) {
-        const user = UserManager.getUser(userId);
+        const user = await UserManager.getUser(userId);
         if (!user) return null;
 
-        // Must be in MATCHED state
         if (user.state !== STATE.MATCHED) {
             Logger.session(`Ignored endSession for ${userId} — state is ${user.state}, not MATCHED`);
             return null;
@@ -98,14 +102,14 @@ export class SessionManager {
             return null;
         }
 
-        const session = sessions.get(sessionId);
+        const session = await StorageService.getSession(sessionId);
 
-        // Session must exist and be ACTIVE
         if (!session) {
             Logger.session(`Cleanup cancelled for ${userId} — session ${sessionId} not found (already ended?)`);
             user.state = STATE.IDLE;
             user.partner = null;
             user.sessionId = null;
+            await UserManager.saveUser(user);
             return null;
         }
 
@@ -114,42 +118,38 @@ export class SessionManager {
             return null;
         }
 
-        // --- Mark session as ENDING to prevent re-entry ---
         session.state = SESSION_STATE.ENDING;
+        await StorageService.setSession(sessionId, session);
 
         const partnerA_id = session.partnerA;
         const partnerB_id = session.partnerB;
         const otherPartnerId = userId === partnerA_id ? partnerB_id : partnerA_id;
 
-        const userA = UserManager.getUser(partnerA_id);
-        const userB = UserManager.getUser(partnerB_id);
+        const userA = await UserManager.getUser(partnerA_id);
+        const userB = await UserManager.getUser(partnerB_id);
 
-        // Reset both users
         if (userA) {
             userA.state = STATE.IDLE;
             userA.partner = null;
             userA.sessionId = null;
+            if (reason === END_REASON.NEXT && userId === partnerA_id) userA.stats.skipped++;
+            else if (reason === END_REASON.STOP && userId === partnerA_id) userA.stats.stopped++;
+            await UserManager.saveUser(userA);
         }
         if (userB) {
             userB.state = STATE.IDLE;
             userB.partner = null;
             userB.sessionId = null;
+            if (reason === END_REASON.NEXT && userId === partnerB_id) userB.stats.skipped++;
+            else if (reason === END_REASON.STOP && userId === partnerB_id) userB.stats.stopped++;
+            await UserManager.saveUser(userB);
         }
 
-        // Track stats for initiator
-        if (reason === END_REASON.NEXT) {
-            if (user) user.stats.skipped++;
-        } else if (reason === END_REASON.STOP) {
-            if (user) user.stats.stopped++;
-        }
-
-        // Mark as ENDED and remove
         session.state = SESSION_STATE.ENDED;
-        sessions.delete(sessionId);
+        await StorageService.deleteSession(sessionId);
 
         Logger.session(`Session Ended | sessionId=${sessionId} | reason=${reason} | initiator=${userId}`);
 
-        // Notify the OTHER partner ONLY for valid reasons
         if (otherPartnerId && (reason === END_REASON.NEXT || reason === END_REASON.STOP)) {
             try {
                 await bot.sendMessage(otherPartnerId, locale.partnerLeft, { reply_markup: idleKeyboard });
@@ -161,41 +161,43 @@ export class SessionManager {
         return otherPartnerId;
     }
 
-    static updateActivity(sessionId) {
-        const session = sessions.get(sessionId);
+    static async updateActivity(sessionId) {
+        const session = await StorageService.getSession(sessionId);
         if (session && session.state === SESSION_STATE.ACTIVE) {
             session.lastActivity = Date.now();
+            await StorageService.setSession(sessionId, session);
         }
     }
 
-    /**
-     * Check for timed-out sessions. Only ends ACTIVE sessions.
-     */
     static async checkTimeouts(bot) {
         const now = Date.now();
-        for (const [sessionId, session] of sessions.entries()) {
+        const allSessions = await StorageService.getAllSessions();
+        for (const session of allSessions) {
             if (session.state !== SESSION_STATE.ACTIVE) continue;
             if (now - session.lastActivity > config.sessionTimeoutMs) {
-                Logger.session(`Session Timeout | sessionId=${sessionId}`);
+                Logger.session(`Session Timeout | sessionId=${session.id}`);
 
                 session.state = SESSION_STATE.ENDING;
+                await StorageService.setSession(session.id, session);
 
-                const uA = UserManager.getUser(session.partnerA);
-                const uB = UserManager.getUser(session.partnerB);
+                const uA = await UserManager.getUser(session.partnerA);
+                const uB = await UserManager.getUser(session.partnerB);
 
                 if (uA) {
                     uA.state = STATE.IDLE;
                     uA.partner = null;
                     uA.sessionId = null;
+                    await UserManager.saveUser(uA);
                 }
                 if (uB) {
                     uB.state = STATE.IDLE;
                     uB.partner = null;
                     uB.sessionId = null;
+                    await UserManager.saveUser(uB);
                 }
 
                 session.state = SESSION_STATE.ENDED;
-                sessions.delete(sessionId);
+                await StorageService.deleteSession(session.id);
 
                 try {
                     await bot.sendMessage(session.partnerA, locale.sessionTimeout, { reply_markup: idleKeyboard });

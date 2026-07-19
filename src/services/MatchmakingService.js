@@ -4,20 +4,18 @@ import { UserManager } from './UserManager.js';
 import { STATE } from '../utils/constants.js';
 import { Logger } from '../utils/logger.js';
 
-// Prevents concurrent processQueue from running
 let isProcessing = false;
 
 export class MatchmakingService {
     /**
      * Process the queue and match users.
-     * Uses a lock flag to prevent concurrent execution and race conditions.
      */
     static async processQueue(bot) {
         if (isProcessing) return;
         isProcessing = true;
 
         try {
-            const queueArr = QueueManager.getQueueArray();
+            const queueArr = await QueueManager.getQueueArray();
             if (queueArr.length < 2) return;
 
             queueArr.sort((a, b) => a.joinedAt - b.joinedAt);
@@ -29,8 +27,9 @@ export class MatchmakingService {
                 if (matchedIds.has(u1.userId)) continue;
 
                 // Verify user is still valid and in queue
-                const user1 = UserManager.getUser(u1.userId);
-                if (!user1 || user1.state !== STATE.SEARCHING || !QueueManager.isInQueue(u1.userId)) continue;
+                const user1 = await UserManager.getUser(u1.userId);
+                const stillInQueue1 = await QueueManager.isInQueue(u1.userId);
+                if (!user1 || user1.state !== STATE.SEARCHING || !stillInQueue1) continue;
 
                 let bestMatch = null;
                 let highestScore = -1;
@@ -39,8 +38,9 @@ export class MatchmakingService {
                     const u2 = queueArr[j];
                     if (matchedIds.has(u2.userId)) continue;
 
-                    const user2 = UserManager.getUser(u2.userId);
-                    if (!user2 || user2.state !== STATE.SEARCHING || !QueueManager.isInQueue(u2.userId)) continue;
+                    const user2 = await UserManager.getUser(u2.userId);
+                    const stillInQueue2 = await QueueManager.isInQueue(u2.userId);
+                    if (!user2 || user2.state !== STATE.SEARCHING || !stillInQueue2) continue;
 
                     const score = this.calculateScore(u1, u2);
                     if (score > highestScore) {
@@ -53,14 +53,11 @@ export class MatchmakingService {
                     matchedIds.add(u1.userId);
                     matchedIds.add(bestMatch.userId);
 
-                    // Atomic sequence: dequeue → create session
-                    // dequeue no longer changes user state
-                    QueueManager.dequeue(u1.userId);
-                    QueueManager.dequeue(bestMatch.userId);
+                    await QueueManager.dequeue(u1.userId);
+                    await QueueManager.dequeue(bestMatch.userId);
 
                     Logger.match(`Match found: ${u1.userId} <-> ${bestMatch.userId} (score: ${highestScore})`);
 
-                    // createSession sets state MATCHING → MATCHED atomically
                     await SessionManager.createSession(bot, u1.userId, bestMatch.userId);
                 }
             }

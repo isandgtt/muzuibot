@@ -1,5 +1,5 @@
+import 'dotenv/config';
 import TelegramBot from 'node-telegram-bot-api';
-import dotenv from 'dotenv';
 import { execute as startCmd } from './commands/start.js';
 import { execute as searchCmd } from './commands/search.js';
 import { execute as nextCmd } from './commands/next.js';
@@ -13,8 +13,6 @@ import { MatchmakingService } from './services/MatchmakingService.js';
 import { SessionManager } from './services/SessionManager.js';
 import config from './config/config.js';
 import { Logger } from './utils/logger.js';
-
-dotenv.config();
 
 const token = process.env.BOT_TOKEN;
 

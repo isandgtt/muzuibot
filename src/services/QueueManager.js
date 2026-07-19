@@ -1,4 +1,4 @@
-import { queue } from '../data/memory.js';
+import { StorageService } from './StorageService.js';
 import { STATE } from '../utils/constants.js';
 import { Logger } from '../utils/logger.js';
 import { UserManager } from './UserManager.js';
@@ -8,47 +8,51 @@ export class QueueManager {
      * Add user to the search queue.
      * Returns false if user is already queued, locked, or in invalid state.
      */
-    static enqueue(userId, temporaryPref = null) {
-        const user = UserManager.getUser(userId);
+    static async enqueue(userId, temporaryPref = null) {
+        const user = await UserManager.getUser(userId);
         if (!user) return false;
 
-        // Block if already in queue, searching, matching, or chatting
-        if (queue.has(userId)) return false;
+        const alreadyIn = await this.isInQueue(userId);
+        if (alreadyIn) return false;
+        
         if (user.state === STATE.SEARCHING || user.state === STATE.MATCHING || user.state === STATE.MATCHED) {
             return false;
         }
 
         user.state = STATE.SEARCHING;
-        queue.set(userId, {
+        await UserManager.saveUser(user);
+
+        const queueItem = {
             userId,
             gender: user.gender,
             genderPreference: temporaryPref || user.genderPreference,
             city: user.city,
             joinedAt: Date.now()
-        });
+        };
+
+        await StorageService.enqueue(userId, queueItem);
         Logger.queue(`User enqueued: ${userId} (pref: ${temporaryPref || user.genderPreference || 'random'})`);
         return true;
     }
 
     /**
      * Remove user from queue. Does NOT change user state
-     * — that responsibility belongs to the caller (MatchmakingService or stop command).
      */
-    static dequeue(userId) {
-        const removed = queue.delete(userId);
+    static async dequeue(userId) {
+        const removed = await StorageService.dequeue(userId);
         if (removed) Logger.queue(`User dequeued: ${userId}`);
         return removed;
     }
 
-    static isInQueue(userId) {
-        return queue.has(userId);
+    static async isInQueue(userId) {
+        return await StorageService.isInQueue(userId);
     }
 
-    static getQueueArray() {
-        return Array.from(queue.values());
+    static async getQueueArray() {
+        return await StorageService.getQueueArray();
     }
 
-    static getQueueSize() {
-        return queue.size;
+    static async getQueueSize() {
+        return await StorageService.getQueueSize();
     }
 }

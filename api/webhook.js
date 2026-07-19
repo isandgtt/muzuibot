@@ -1,9 +1,7 @@
+import 'dotenv/config';
 import express from 'express';
 import bot from '../src/bot.js';
-import dotenv from 'dotenv';
 import { SessionManager } from '../src/services/SessionManager.js';
-
-dotenv.config();
 
 const app = express();
 app.use(express.json());

@@ -6,7 +6,7 @@ import config from '../config/config.js';
 import { Logger } from '../utils/logger.js';
 import { SessionManager } from '../services/SessionManager.js';
 import { StatsManager } from '../services/StatsManager.js';
-import { sessions } from '../data/memory.js';
+import { StorageService } from '../services/StorageService.js';
 
 import { execute as searchCmd } from '../commands/search.js';
 import { execute as nextCmd } from '../commands/next.js';
@@ -20,10 +20,10 @@ export const handleMessage = async (bot, msg) => {
     const chatId = msg.chat.id;
     const text = msg.text;
 
-    const user = UserManager.getUser(chatId);
+    const user = await UserManager.getUser(chatId);
     if (!user) return;
 
-    UserManager.updateLastSeen(chatId);
+    await UserManager.updateLastSeen(chatId);
 
     // Ignore slash commands (handled by onText in bot.js)
     if (text && text.startsWith('/')) return;
@@ -55,6 +55,7 @@ export const handleMessage = async (bot, msg) => {
         if (!user.city) {
             user.city = text.trim().substring(0, 50);
             user.state = STATE.IDLE;
+            await UserManager.saveUser(user);
             await bot.sendMessage(chatId, locale.profileCreated, { reply_markup: idleKeyboard });
         }
         return;
@@ -62,9 +63,9 @@ export const handleMessage = async (bot, msg) => {
 
     // Forward messages to partner (only when fully MATCHED with valid ACTIVE session)
     if (user.state === STATE.MATCHED && user.partner && user.sessionId) {
-        const session = sessions.get(user.sessionId);
+        const session = await StorageService.getSession(user.sessionId);
         if (!session || session.state !== SESSION_STATE.ACTIVE) {
-            return; // Session not ready or already ending, silently ignore
+            return; 
         }
 
         // Rate limiter
@@ -74,12 +75,13 @@ export const handleMessage = async (bot, msg) => {
             return bot.sendMessage(chatId, locale.rateLimitWarning);
         }
         user.rateLimit.timestamps.push(now);
+        await UserManager.saveUser(user);
 
         const partnerId = user.partner;
         try {
-            SessionManager.updateActivity(user.sessionId);
-            const partnerUser = UserManager.getUser(partnerId);
-            StatsManager.recordMessage(user, partnerUser);
+            await SessionManager.updateActivity(user.sessionId);
+            const partnerUser = await UserManager.getUser(partnerId);
+            await StatsManager.recordMessage(user, partnerUser);
 
             bot.sendChatAction(partnerId, "typing").catch(() => {});
             await bot.copyMessage(partnerId, chatId, msg.message_id);

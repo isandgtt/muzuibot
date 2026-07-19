@@ -7,7 +7,7 @@ import locale from '../locales/id.js';
 
 export const execute = async (bot, msg) => {
     const chatId = msg.chat.id;
-    const user = UserManager.getUser(chatId);
+    const user = await UserManager.getUser(chatId);
 
     if (!user) return bot.sendMessage(chatId, "Gunakan /start terlebih dahulu.");
 
@@ -15,8 +15,9 @@ export const execute = async (bot, msg) => {
         await SessionManager.endSession(bot, chatId, END_REASON.STOP);
         bot.sendMessage(chatId, locale.youLeft, { reply_markup: idleKeyboard });
     } else if (user.state === STATE.SEARCHING) {
-        QueueManager.dequeue(chatId);
+        await QueueManager.dequeue(chatId);
         user.state = STATE.IDLE;
+        await UserManager.saveUser(user);
         SessionManager.clearAnimation(chatId);
         bot.sendMessage(chatId, locale.stopSearch, { reply_markup: idleKeyboard });
     } else {

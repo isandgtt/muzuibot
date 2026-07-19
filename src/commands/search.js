@@ -2,15 +2,15 @@ import { UserManager } from '../services/UserManager.js';
 import { QueueManager } from '../services/QueueManager.js';
 import { SessionManager } from '../services/SessionManager.js';
 import { MatchmakingService } from '../services/MatchmakingService.js';
-import { STATE, END_REASON } from '../utils/constants.js';
+import { STATE } from '../utils/constants.js';
 import locale from '../locales/id.js';
 import config from '../config/config.js';
 import { activeAnimations } from '../data/memory.js';
-import { searchGenderKeyboard, idleKeyboard } from '../utils/keyboards.js';
+import { searchGenderKeyboard } from '../utils/keyboards.js';
 
 export const execute = async (bot, msg, byGender = false) => {
     const chatId = msg.chat.id;
-    const user = UserManager.getUser(chatId);
+    const user = await UserManager.getUser(chatId);
 
     if (!user) return;
 
@@ -23,15 +23,10 @@ export const execute = async (bot, msg, byGender = false) => {
     await joinQueue(bot, chatId);
 };
 
-/**
- * Enqueue user and trigger matchmaking.
- * NEVER calls endSession — that is exclusively for Next/Stop commands.
- */
 export const joinQueue = async (bot, chatId, tempPref = null) => {
-    const user = UserManager.getUser(chatId);
+    const user = await UserManager.getUser(chatId);
     if (!user) return;
 
-    // Block if user is locked (being matched), already chatting, or already searching
     if (user.state === STATE.MATCHING) {
         return bot.sendMessage(chatId, "⏳ Sedang memproses...");
     }
@@ -42,28 +37,32 @@ export const joinQueue = async (bot, chatId, tempPref = null) => {
         return bot.sendMessage(chatId, locale.alreadyInQueue);
     }
 
-    const success = QueueManager.enqueue(chatId, tempPref);
+    const success = await QueueManager.enqueue(chatId, tempPref);
     if (!success) {
         return bot.sendMessage(chatId, locale.alreadyInQueue);
     }
 
     await startSearchMessage(bot, chatId);
 
-    // Trigger matchmaking immediately (important for serverless/Vercel)
+    // Trigger matchmaking immediately for Vercel/serverless
     await MatchmakingService.processQueue(bot);
 };
 
 const startSearchMessage = async (bot, chatId) => {
     try {
-        const text = `${locale.searching}\n\nPeople online: ${UserManager.getUsersCount()}\nSearching: ${QueueManager.getQueueSize()}\nEstimated wait: < 1 minute`;
+        const usersCount = await UserManager.getUsersCount();
+        const queueSize = await QueueManager.getQueueSize();
+        const text = `${locale.searching}\n\nPeople online: ${usersCount}\nSearching: ${queueSize}\nEstimated wait: < 1 minute`;
         const msg = await bot.sendMessage(chatId, text);
 
         if (config.webhookMode) return;
 
         let dots = 1;
-        const interval = setInterval(() => {
+        const interval = setInterval(async () => {
             const dotStr = ".".repeat(dots);
-            const updatedText = `🔍 Searching partner${dotStr}\n\nPeople online: ${UserManager.getUsersCount()}\nSearching: ${QueueManager.getQueueSize()}\nEstimated wait: < 1 minute`;
+            const currentUsersCount = await UserManager.getUsersCount();
+            const currentQueueSize = await QueueManager.getQueueSize();
+            const updatedText = `🔍 Searching partner${dotStr}\n\nPeople online: ${currentUsersCount}\nSearching: ${currentQueueSize}\nEstimated wait: < 1 minute`;
             bot.editMessageText(updatedText, {
                 chat_id: chatId,
                 message_id: msg.message_id

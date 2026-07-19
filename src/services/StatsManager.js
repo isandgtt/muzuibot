@@ -1,17 +1,27 @@
-import { globalStats } from '../data/memory.js';
+import { StorageService } from './StorageService.js';
 
 export class StatsManager {
-    static incrementMatches() {
-        globalStats.totalMatches++;
+    static async incrementMatches() {
+        await StorageService.incrementMatches();
     }
     
-    static incrementMessages() {
-        globalStats.messagesExchanged++;
+    static async incrementMessages() {
+        await StorageService.incrementMessages();
     }
     
-    static recordMessage(userA, userB) {
-        if (userA) userA.stats.messagesSent++;
-        if (userB) userB.stats.messagesReceived++;
-        this.incrementMessages();
+    static async recordMessage(userA, userB) {
+        if (userA) {
+            userA.stats.messagesSent++;
+            await StorageService.setUser(userA.telegram_id, userA);
+        }
+        if (userB) {
+            userB.stats.messagesReceived++;
+            await StorageService.setUser(userB.telegram_id, userB);
+        }
+        await this.incrementMessages();
+    }
+
+    static async getGlobalStats() {
+        return await StorageService.getGlobalStats();
     }
 }
